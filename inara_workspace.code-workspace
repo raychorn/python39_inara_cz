@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"python.venvPath": "C:/Users/Owner/OneDrive/Python39/inara_cz/venv",
+		"terminal.integrated.env.windows": {
+			"PATH": "C:/Program Files/Git/cmd;C:/msys/opt/windows_64/bin;C:/Users/Owner/OneDrive/Python39/inara_cz/venv/Scripts"
+		},
+	}
+}
