@@ -14,6 +14,7 @@ for f in sys.path:
     print(f)
 
 from inara import sample as inara_sample
+from inara import scrape_commodities
 from inara import scrape_commodity_data
 
 if (__name__ == '__main__'):
@@ -23,4 +24,5 @@ if (__name__ == '__main__'):
         print('ERROR: Requires Python 3.9.x rather than {}. Please use the correct Python version.'.format(
             py_version))
 
+    scrape_commodities()
     scrape_commodity_data()

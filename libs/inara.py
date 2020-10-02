@@ -79,6 +79,53 @@ def sample():
     #$result = json_decode($response, true);   // process the result as you wish
     
 
+def scrape_commodities():
+    import os
+    import requests
+
+    from vyperlogix import enum
+    
+    from bs4 import BeautifulSoup
+    
+    from io import StringIO
+    
+    commodities = {}
+    
+    __tritium__ = 'Tritium'
+
+    commodities_url1 = "https://inara.cz/galaxy-commodities/"
+    
+    r = requests.get(commodities_url1)
+    if (r.ok):
+        soup = BeautifulSoup(r.content, 'html.parser')
+        divs = soup.findAll(name='div', attrs={'class':"maincontentcontainer"})
+        selects = soup.findAll(name='select', attrs={'name':'searchcommodity'})
+        for sel in selects:
+            for child in sel.children:
+                if (child.name.lower() == 'option'):
+                    if (child.getText() not in commodities.keys()):
+                        commodities[child.getText()] = child.attrs.get('value', None)
+                    print('{} --> {}'.format(child.getText(), child.attrs))
+        if (__tritium__ not in commodities.keys()):
+            raise(CommodityError, 'Cannot find {}.'.format(__tritium__))
+        trit = commodities.get(__tritium__, None)
+        if (not trit):
+            raise(CommodityValueErrorError, 'Cannot find value for {}.'.format(__tritium__))
+        fname = os.path.abspath('./libs/commodities.py')
+        with open(fname, 'w') as ffOut:
+            fOut = StringIO()
+            fOut.write('from vyperlogix import enum\n')
+            fOut.write('class Commodities(enum.Enum.Enum):\n')
+            for k,v in commodities.items():
+                fOut.write('{}{}={}\n'.format(' '*4,k,v))
+            fOut.flush()
+            lines = fOut.getvalue().split('\n')
+            ffOut.writelines(lines)
+            fOut.close()
+    else:
+        print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
+    
+
 def scrape_commodity_data():
     import requests
     import simplejson
@@ -86,6 +133,8 @@ def scrape_commodity_data():
     from vyperlogix import enum
     
     from bs4 import BeautifulSoup
+    
+    from io import StringIO
     
     commodities = {}
     
@@ -120,6 +169,15 @@ def scrape_commodity_data():
         trit = commodities.get(__tritium__, None)
         if (not trit):
             raise(CommodityValueErrorError, 'Cannot find value for {}.'.format(__tritium__))
+        fOut = StringIO()
+        fOut.write('class Commodities(enum.Enum.Enum):\n')
+        for k,v in commodities.items():
+            fOut.write('{}{}={}\n'.format(' '*4,k,v))
+        fOut.flush()
+        lines = fOut.getvalue().split('\n')
+        for l in lines:
+            print(l)
+        fOut.close()
         for div in divs:
             for child in div.children:
                 pass
