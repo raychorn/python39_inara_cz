@@ -77,24 +77,24 @@ def sample():
         print(response)
 
     #$result = json_decode($response, true);   // process the result as you wish
-    
+
 
 def scrape_commodities():
     import os
     import requests
 
     from vyperlogix import enum
-    
+
     from bs4 import BeautifulSoup
-    
+
     from io import StringIO
-    
+
     commodities = {}
-    
+
     __tritium__ = 'Tritium'
 
     commodities_url1 = "https://inara.cz/galaxy-commodities/"
-    
+
     r = requests.get(commodities_url1)
     if (r.ok):
         soup = BeautifulSoup(r.content, 'html.parser')
@@ -129,20 +129,20 @@ def scrape_commodities():
             fOut.close()
     else:
         print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
-    
+
 
 def scrape_commodity_data():
     import requests
     import simplejson
 
     from vyperlogix import enum
-    
+
     from bs4 import BeautifulSoup
-    
+
     from io import StringIO
-    
+
     commodities = {}
-    
+
     __tritium__ = 'Tritium'
 
     class RefName(enum.Enum.Enum):
@@ -155,14 +155,27 @@ def scrape_commodity_data():
     tritium_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=367"     # refid is the commodity, refid2 is the star system.
     tritium_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=18698"
     tritium_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=18698"
-    
+
     commodities_url1 = "https://inara.cz/galaxy-commodity/10269/"
     commodities_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=0"
     commodities_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=0"
 
     headers = []
     results = []
-    
+
+    def format_header(row, use_keys=True):
+        formatted_header = []
+        try:
+            subj = row.keys() if (use_keys) else row.values()
+            fmt = ['{}'.format(item) for item in subj]
+            for item in fmt:
+                formatted_header.append(item)
+            formatted_header = '\t'.join(formatted_header).strip()+'\n'
+        except Exception as ex:
+            formatted_header = '-- INVALID --'
+        return formatted_header
+
+
     r = requests.get(commodities_url2)
     if (r.ok):
         soup = BeautifulSoup(r.content, 'html.parser')
@@ -172,29 +185,58 @@ def scrape_commodity_data():
             results = [{headers[i]: cell for i, cell in enumerate(row.find_all('td'))}
                        for row in table.find_all('tr')]
             the_results = []
+            acceptable_tags = ['a','span']
             for result in results:
                 if (len(result.keys()) > 0):
                     row = {}
                     for k,v in result.items():
-                        row[k] = v.getText()
+                        items_in_row = []
+                        try:
+                            for item in [c for c in v.children]: #  if (c.name in acceptable_tags)
+                                try:
+                                    items_in_row.append(item.text)
+                                except Exception as ex:
+                                    items_in_row.append(str(item))
+                            row[k] = ''.join(items_in_row)
+                        except Exception as ex:
+                            print(ex)
                     the_results.append(row)
             break
         # dump the dict into a SQLite Db Table.
         fOut = StringIO()
-        fOut.write('class Commodities(enum.Enum.Enum):\n')
-        for k,v in commodities.items():
-            fOut.write('{}{}={}\n'.format(' '*4,k,v))
+        fOut.write('BEGIN:\n')
+        has_header = False
+        for row in the_results:
+            if (len(row.keys()) > 0):
+                if (not has_header):
+                    fOut.write(format_header(row, use_keys=True))
+                    has_header = True
+                fOut.write(format_header(row, use_keys=False))
         fOut.flush()
         lines = fOut.getvalue().split('\n')
+        fOut.write('END!!!\n')
         for l in lines:
             print(l)
         fOut.close()
-        for div in divs:
-            for child in div.children:
-                pass
+
+        import os
+        import csv
+        try:
+            fpath = os.path.abspath('./data')
+            if (not os.path.isdir(fpath)):
+                os.mkdir(fpath)
+            fname = os.path.abspath(os.path.join(fpath, 'commodity_tritium.csv'))
+            with open(fname,mode='w',encoding='utf8',newline='') as output_to_csv:
+                dict_csv_writer = csv.DictWriter(output_to_csv, fieldnames=headers,dialect='excel')
+                dict_csv_writer.writeheader()
+                dict_csv_writer.writerows(the_results)
+            print('\nData exported to {} succesfully and sample data'.format(fname))
+        except IOError as io:
+            print('\n',io)
+            
+        
     else:
         print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
-    
+
 if (__name__ == '__main__'):
     scrape_commodity_data()
-    
