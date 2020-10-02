@@ -131,6 +131,39 @@ def scrape_commodities():
         print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
 
 
+def upload_to_google_drive(fname):
+    import os
+    from vyperlogix import _utils
+    from pydrive.auth import GoogleAuth
+    from pydrive.drive import GoogleDrive
+    
+    gauth = GoogleAuth()
+    my_creds_fpath = os.path.abspath('./mycreds.txt')
+    if (not os.path.exists(my_creds_fpath)) or (not os.path.isfile(my_creds_fpath)):
+        gauth.LocalWebserverAuth() # bootstrap to achieve the desired goal.
+        gauth.SaveCredentialsFile(my_creds_fpath)
+    else:
+        gauth.LoadCredentialsFile(my_creds_fpath)
+    
+    drive = GoogleDrive(gauth)    
+
+    target_drive_folder = '@data'
+    try:
+        folders = drive.ListFile({'q': " title='{}' ".format(target_drive_folder)}).GetList()
+    except Exception as ex:
+        print('WARNING: {}.'.format(ex))
+        folders = []
+
+    for folder in folders:
+        if folder['title'] == target_drive_folder:
+            target_filename = '{}_{}'.format(os.path.basename(fname), _utils.timeStampForFileName())
+            print('{} {} --> {}'.format(folder.get('id'), folder.get('title'), target_filename))
+            file2 = drive.CreateFile({'parents': [{'id': folder['id']}], 'title': target_filename})
+            file2.SetContentFile(fname)
+            file2.Upload()    
+    print('\n')
+        
+        
 def scrape_commodity_data():
     import requests
     import simplejson
@@ -234,6 +267,7 @@ def scrape_commodity_data():
         except IOError as io:
             print('\n',io)
             
+        upload_to_google_drive(fname)
         
     else:
         print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
