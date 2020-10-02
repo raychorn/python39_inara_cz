@@ -158,6 +158,7 @@ def scrape_commodity_data():
     
     commodities_url1 = "https://inara.cz/galaxy-commodity/10269/"
     commodities_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=0"
+    commodities_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=0"
 
     headers = []
     results = []
