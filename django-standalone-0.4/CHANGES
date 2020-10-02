@@ -1,0 +1,14 @@
+version 0.4: (released Mar 7th, 2010)
+	- testing integrated with setup.py
+	- only script models are now patched into standalone.model
+	- fixed a bug with installed apps not working right if the script
+	  prepopulated INSTALLED_APPS
+
+version 0.3: (released Feb 28th, 2010)
+	- access to the django REPL with access to models
+	- added very simple testing to the project
+	- added a way to do sdist
+
+version 0.2 fixed setup.py
+
+version 0.1 first public version with missing dependency in setup.py

@@ -117,10 +117,15 @@ def scrape_commodities():
             fOut.write('from vyperlogix import enum\n')
             fOut.write('class Commodities(enum.Enum.Enum):\n')
             for k,v in commodities.items():
-                fOut.write('{}{}={}\n'.format(' '*4,k,v))
+                fOut.write('{}{}={}\n'.format(' '*4,''.join(''.join(''.join(k.split()).split('-')).split('.')),v))
+            fOut.write('')
+            fOut.write('')
+            fOut.write("is_normalized_key = lambda key:(not str(key).startswith('__')) and (not str(key).endswith('__'))\n")
+            fOut.write("all_commodities = [k for k in Commodities.__dict__.keys() if (is_normalized_key(k))]\n")
+            fOut.write("commodities = dict([tuple([k,v]) for k,v in Commodities.__dict__.items() if (is_normalized_key(k))])\n")
+            fOut.write('')
             fOut.flush()
-            lines = fOut.getvalue().split('\n')
-            ffOut.writelines(lines)
+            ffOut.writelines(fOut.getvalue())
             fOut.close()
     else:
         print('WARNING: Problem with {} {}.'.format(commodities_url1, r.status_code))
@@ -151,24 +156,29 @@ def scrape_commodity_data():
     tritium_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=18698"
     tritium_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=18698"
     
-    commodities_url1 = "https://inara.cz/galaxy-commodities/"
+    commodities_url1 = "https://inara.cz/galaxy-commodity/10269/"
+    commodities_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=0"
+
+    headers = []
+    results = []
     
-    r = requests.get(commodities_url1)
+    r = requests.get(commodities_url2)
     if (r.ok):
         soup = BeautifulSoup(r.content, 'html.parser')
-        divs = soup.findAll(name='div', attrs={'class':"maincontentcontainer"})
-        selects = soup.findAll(name='select', attrs={'name':'searchcommodity'})
-        for sel in selects:
-            for child in sel.children:
-                if (child.name.lower() == 'option'):
-                    if (child.getText() not in commodities.keys()):
-                        commodities[child.getText()] = child.attrs.get('value', None)
-                    print('{} --> {}'.format(child.getText(), child.attrs))
-        if (__tritium__ not in commodities.keys()):
-            raise(CommodityError, 'Cannot find {}.'.format(__tritium__))
-        trit = commodities.get(__tritium__, None)
-        if (not trit):
-            raise(CommodityValueErrorError, 'Cannot find value for {}.'.format(__tritium__))
+        tables = soup.findAll(name='table', attrs={'class':"tablesorter"})
+        for table in tables:
+            headers = [header.text for header in table.find_all('th')]
+            results = [{headers[i]: cell for i, cell in enumerate(row.find_all('td'))}
+                       for row in table.find_all('tr')]
+            the_results = []
+            for result in results:
+                if (len(result.keys()) > 0):
+                    row = {}
+                    for k,v in result.items():
+                        row[k] = v.getText()
+                    the_results.append(row)
+            break
+        # dump the dict into a SQLite Db Table.
         fOut = StringIO()
         fOut.write('class Commodities(enum.Enum.Enum):\n')
         for k,v in commodities.items():

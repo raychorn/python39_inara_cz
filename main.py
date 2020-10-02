@@ -17,6 +17,8 @@ from inara import sample as inara_sample
 from inara import scrape_commodities
 from inara import scrape_commodity_data
 
+__scrape_commodities__ = False
+
 if (__name__ == '__main__'):
     # float(sys.version_info.major)+(float(sys.version_info.minor)/10)+(float(sys.version_info.micro)/100)
     py_version = _utils.getVersionFloat()
@@ -24,5 +26,9 @@ if (__name__ == '__main__'):
         print('ERROR: Requires Python 3.9.x rather than {}. Please use the correct Python version.'.format(
             py_version))
 
-    scrape_commodities()
+    if (__scrape_commodities__):
+        scrape_commodities()
+        from commodities import Commodities
+        from commodities import all_commodities
+        from commodities import commodities
     scrape_commodity_data()

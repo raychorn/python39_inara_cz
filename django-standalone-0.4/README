@@ -1,0 +1,169 @@
+-*- markdown -*-
+
+Simple Standalone Scripts Using the Django ORM
+=====================================================
+
+This little library is all about easing the pain of using
+the Django ORM for simple tools that just happen to be in need
+of some easy to use ORM for object persistence.
+
+The best way of course is to set up a full Django project and
+just use a settings.py file and using the DJANGO_SETINGS_MODULE
+environment variable. But when you just want to do little tools
+that just need some sqlite3 database to store some of their
+data and don't want to go for a full Django project, that is
+where this little library comes into play.
+
+It consists of just two modules so far:
+
+standalone.conf handles all the configuration needs, setting up
+
+standalone.models carries a base class for your models that
+automatically tells Python that all models created actually
+reside in the standalone Django app, even though they are
+in a different file, outside the app's namespace.
+
+As a warning: this might be seen as voodoo, bad magic or just
+a plain stupid idea by some people. And the official way
+to do it might be a much better idea for you. I myself just
+happen to like to have the ability to easily create standalone
+executable scripts that don't rely on some predefined project
+structure.
+
+how to get it
+---------------
+
+The easiest way to get django-standalone is to use easy_install
+or pip:
+
+sudo easy_install django-standalone
+
+or
+
+sudo pip install django-standalone
+
+Or you can clone this repository and run the included setup.py
+
+To run the included test cases, just run the following:
+
+pythons setup.py test
+
+using in your scripts:
+------------------------
+
+First create a dynamic configuration for your database
+connection:
+
+ from standalone.conf import settings
+ settings = settings(
+     DATABASE_ENGINE='sqlite3',
+     DATABASE_NAME=options.database,
+ )
+
+this is all you need to do to have django modules working
+in your script. You would have to add additional settings if
+you want to use more than just the ORM, for example you will
+have to add TEMPLATE_DIR if you want to use the template modules.
+
+You can add any django setting you want - standalone.conf will
+allways extend your settings, never overwrite them.
+
+Now you just define a bunch of Models, using the provided base
+class in your script. The needed module standalone.models
+reexports everything from django.models, so you only need one.
+
+ from standalone import models
+
+ class MyModel(models.StandaloneModel):
+
+     col1 = models.CharField(max_length=1000)
+     col2 = models.IntegerField()
+     col3 = models.BooleanField()
+
+     def __unicode__(self):
+         return self.col1
+
+This will create the model and will make it available directly
+in your script. Additionally it will make them available in the
+module standalone.models for access by modules you might import
+in your script or for access in the django shell.
+
+This patching into standalone.models only happens for models
+defined in scripts, though - if your models reside in proper
+python modules, nothing of that kind will happen, as they
+are easily accessible to modules or the shell in their original
+module. If for any reason you need to force install into
+standalone.models, too (for example the testing uses this
+to make sure the model is accessible in a standard place even
+though defined in a module), you can add a class variable
+force_install_standalone_models with a true value.
+
+If you want to access a Django shell with access to your models,
+you can just use the standard way to access management commands
+from scripts:
+
+ from django.core.management import call_command
+ call_command("shell")
+
+The same way can be used to actually create the tables, too. Put
+the following lines directly after your model declarations and
+your script will automatically set up the database tables if they
+don't yet exist.
+
+ from django.core.management import call_command
+ call_command("syncdb")
+
+Using with a library of models
+--------------------------------
+
+You can create library modules with model definitions based
+on StandaloneModel, too. These won't be patched into standalone.models,
+though, so you have to reference them by their own modules. They
+can reference models in your script by using symbolic names.
+
+ from standalone import models
+
+ class MyOtherModel(models.StandaloneModel):
+
+     col1 = models.CharField(max_length=100)
+     col2 = models.ForeignKey("standalone.MyModel")
+
+To write a class that again references this library model, just do
+something like the following:
+
+ from mylibrary.mymodels import MyOtherModel
+
+ class AndYetAnotherModel(models.StandaloneModel):
+
+     col1 = models.ForeignKey(MyOtherModel)
+
+There are situations where you need to force a model to be installed
+into standalone.models to make sure you can access it from other
+places. One such situation is setUp methods in test cases. For that
+purpose, you can define an option as follows:
+
+ class AllwaysInstalledModel(models.StandaloneModel):
+     force_install_standalone_models = True
+
+     col1 = models.CharField(max_length=100)
+
+This model will not only reside in it's own scope but will additionally
+be hooked up in standalone.models as a global value.
+
+CAVEAT: even if a model is not installed into standalone.models,
+they will allways be regarded as models of the standalone application.
+Which means, their table names will all start with 'standalone_'
+in the database! This has to do with the fact that django only likes
+model definitions that are linked to some installed django application
+and django-standalone behaves as an umbrella application for all
+models defined in the context of a script.
+
+contacting the author
+-----------------------
+
+Can be done at gb at rfc1437.de in case of problems. Allthough, as the
+license says, essentially it's a "if you break it, you have to keep
+the pieces" thing. Of course, I allways like to hear war stories. Just
+don't blame me if this little lib kills your production server, hunts
+down your boss and eradicates all your companies expense records.
+
