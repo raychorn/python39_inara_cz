@@ -164,33 +164,30 @@ def upload_to_google_drive(fname):
     print('\n')
         
         
-def scrape_commodity_data():
+def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='./data', is_verbose=False):
     import requests
-    import simplejson
 
-    from vyperlogix import enum
     from vyperlogix import _utils
+    
+    import commodities
 
     from bs4 import BeautifulSoup
 
     __location__ = 'Location'
 
-    __tritium__ = 'Tritium'
+    __commodity_name__ = commodities.commodities_by_value.get(commodity_refid, None)
+    if (__commodity_name__ is None) or (not isinstance(__commodity_name__, str)):
+        raise(CommodityValueError, 'WARNING: Cannot resolve {} to a valid Commodity Name.'.format(commodity_refid))
+    
+    #__tritium__ = 'Tritium'
 
-    class RefName(enum.Enum.Enum):
-        buymin=0
-        sellmax=1
-    class Items(enum.Enum.Enum):
-        tritium=10269
-    class Systems(enum.Enum.Enum):
-        tritium=10269
-    tritium_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=367"     # refid is the commodity, refid2 is the star system.
-    tritium_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=18698"
-    tritium_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=18698"
+    #tritium_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=367"     # refid is the commodity, refid2 is the star system.
+    #tritium_url2 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=18698"
+    #tritium_url3 = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=18698"
 
-    commodities_url1 = "https://inara.cz/galaxy-commodity/10269/"
-    commodities_buymin_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid=10269&refid2=0"
-    commodities_sellmax_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid=10269&refid2=0"
+    #commodities_url1 = "https://inara.cz/galaxy-commodity/10269/"
+    commodities_buymin_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=buymin&refid={}&refid2={}".format(commodity_refid, star_system_refid)
+    commodities_sellmax_url = "https://inara.cz/ajaxaction.php?act=goodsdata&refname=sellmax&refid={}&refid2={}".format(commodity_refid, star_system_refid)
 
 
     def format_header(row, use_keys=True):
@@ -206,7 +203,7 @@ def scrape_commodity_data():
         return formatted_header
 
 
-    def print_data(the_data):
+    def print_data(the_data, verbose=False):
         from io import StringIO
 
         fOut = StringIO()
@@ -225,11 +222,12 @@ def scrape_commodity_data():
         lines = fOut.getvalue().split('\n')
         fOut.write('END!!!\n')
         for l in lines:
-            print(l)
+            if (verbose):
+                print(l)
         fOut.close()
         
         
-    def export_as_csv_file(the_headers, the_data, dirname, basefilename):
+    def export_as_csv_file(the_headers, the_data, dirname, basefilename, verbose=False):
         import os
         import csv
         try:
@@ -241,7 +239,8 @@ def scrape_commodity_data():
                 dict_csv_writer = csv.DictWriter(output_to_csv, fieldnames=the_headers,dialect='excel')
                 dict_csv_writer.writeheader()
                 dict_csv_writer.writerows(the_data)
-            print('\nData exported to {} succesfully and sample data'.format(fname))
+            if (verbose):
+                print('\nData exported to {} succesfully and sample data'.format(fname))
         except IOError as io:
             print('\n',io)
         
@@ -328,10 +327,10 @@ def scrape_commodity_data():
     
             the_results = new_results
             if (is_verbose):
-                print_data(the_results)        
+                print_data(the_results, verbose=is_verbose)        
     
             if (dirname is not None) and (filename is not None):
-                export_as_csv_file(the_results[0].keys(), the_results, dirname, filename)
+                export_as_csv_file(the_results[0].keys(), the_results, dirname, filename, verbose=is_verbose)
         
                 if (is_uploading):
                     upload_to_google_drive(fname) # must debug this.
@@ -361,7 +360,7 @@ def scrape_commodity_data():
     pandas.set_option('display.max_columns', None)
     pandas.set_option('display.width', 200)
 
-    buymin_results = fetch_data_from(commodities_buymin_url, dirname='./data', filename='commodity_tritium_buymin.csv', is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
+    buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
     
     df_buymin = pandas.DataFrame(buymin_results)
 
@@ -369,12 +368,18 @@ def scrape_commodity_data():
     #print('(0) Min {}, Max {}, Mean {}'.format(df_buymin[colName].min(), df_buymin[colName].max(), df_buymin[colName].mean()))
 
     buymin_subDataFrame = harmonic_averages(df_buymin, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
-    print('(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
+    if (is_verbose):
+        print('(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
     buymin_price = buymin_subDataFrame[colName].min()
-    print(buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].dropna())
-    #buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout)
+    if (is_verbose):
+        print(buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].dropna())
 
-    sellmax_results = fetch_data_from(commodities_sellmax_url, dirname='./data', filename='commodity_tritium_sellmax.csv', is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
+    fpath = os.sep.join([dirname, 'commodity_{}_buymin_locations.csv'.format(__commodity_name__)])
+    with open(fpath, 'w') as fOut:
+        buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout if (is_verbose) else fOut)
+        fOut.flush()
+
+    sellmax_results = fetch_data_from(commodities_sellmax_url, dirname=dirname, filename='commodity_{}_sellmax.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
     
     df_sellmax = pandas.DataFrame(sellmax_results)
 
@@ -382,13 +387,18 @@ def scrape_commodity_data():
     #print('(0) Min {}, Max {}, Mean {}'.format(df_sellmax[colName].min(), df_sellmax[colName].max(), df_sellmax[colName].mean()))
 
     sellmax_subDataFrame = harmonic_averages(df_sellmax, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
-    print('(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
+    if (is_verbose):
+        print('(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
     sellmax_price = sellmax_subDataFrame[colName].min()
     
     if int(sellmax_price / buymin_price) > 5:
-        print('Locations with profit margin greater than 5:')
-        print(sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].dropna())
-        #sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout)
+        if (is_verbose):
+            print('Locations with profit margin greater than 5:')
+            print(sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].dropna())
+        fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
+        with open(fpath, 'w') as fOut:
+            sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout if (is_verbose) else fOut)
+            fOut.flush()
 
     #print(sellmax_subDataFrame)          
         

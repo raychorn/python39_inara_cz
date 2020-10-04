@@ -232,4 +232,13 @@ class Commodities(enum.Enum.Enum):
     WreckageComponents=10207
 is_normalized_key = lambda key:(not str(key).startswith('__')) and (not str(key).endswith('__'))
 all_commodities = [k for k in Commodities.__dict__.keys() if (is_normalized_key(k))]
-commodities = dict([tuple([k,v]) for k,v in Commodities.__dict__.items() if (is_normalized_key(k))])
+commodities_by_name = commodities = dict([tuple([k,v]) for k,v in Commodities.__dict__.items() if (is_normalized_key(k))])
+
+commodities_by_value = {}
+for k,v in commodities_by_name.items():
+    if (v in commodities_by_value.keys()):
+        commodities_by_value[v] = [commodities_by_value.get(v, k)]
+    item = commodities_by_value.get(v, k)
+    if (isinstance(item, list)):
+        item.append(k)
+    commodities_by_value[v] = item
