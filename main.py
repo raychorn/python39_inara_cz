@@ -39,8 +39,42 @@ if (__name__ == '__main__'):
         from commodities import all_commodities
         from commodities import commodities
     if (__scrape_commodity_data__):
-        scrape_commodity_data()
-        
+        from queue import Queue
+        import commodities
+
+        if (0):
+            import time
+            from concurrent import futures as concurrent_futures
+            
+            __done__ = False
+            def wait_for_output(output_queue):
+                while (1):
+                    try:
+                        msg = output_queue.get(timeout=5)
+                        if (__done__ and (output_queue.qsize() == 0)):
+                            sys.stderr.write('Nothing more to do.\n')
+                            break
+                    except:
+                        __done__ = True
+                    time.sleep(1)
+            
+            output = Queue(maxsize = 100)
+            items = [commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
+    
+            with concurrent_futures.ThreadPoolExecutor(max_workers=10) as executor:
+                futures = {executor.submit(scrape_commodity_data, commodity_refid=item, star_system_refid=0, dirname='./data', is_verbose=False, fOut=output): item for item in items}
+                for future in concurrent_futures.as_completed(futures):
+                    try:
+                        data = future.result()
+                    except Exception as ex:
+                        print('Got an exception: %s' % (ex))
+                sys.stderr.write('Signal we are done.\n')
+                __done__ = True
+        else:
+            items = [commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
+            for item in items:
+                scrape_commodity_data(commodity_refid=item, star_system_refid=0, dirname='./data', is_verbose=False, fOut=sys.stdout)
+
     if (__prep_google_creds__):
         fpath1 = os.path.abspath('./token.pickle')
         fpath2 = os.path.abspath('./client_secrets.json')

@@ -17,6 +17,10 @@ WITH THE USE OR PERFORMANCE OF THIS SOFTWARE !
 
 USE AT YOUR OWN RISK.
 """
+import os
+import sys
+import math
+
 class CommodityError(Exception):
     pass
 
@@ -164,7 +168,10 @@ def upload_to_google_drive(fname):
     print('\n')
         
         
-def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='./data', is_verbose=False):
+def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='./data', is_verbose=False, fOut=sys.stdout):
+    """
+    fOut can be sys.stdout or a Queue to allow for background processing.
+    """
     import requests
 
     from vyperlogix import _utils
@@ -174,7 +181,9 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     from bs4 import BeautifulSoup
 
     __location__ = 'Location'
-
+    
+    normalize_key = lambda k:'{}{}'.format('_'.join([t for t in str(k).split() if (len(t) > 0)]),'_value')
+    
     __commodity_name__ = commodities.commodities_by_value.get(commodity_refid, None)
     if (__commodity_name__ is None) or (not isinstance(__commodity_name__, str)):
         raise(CommodityValueError, 'WARNING: Cannot resolve {} to a valid Commodity Name.'.format(commodity_refid))
@@ -271,6 +280,7 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
 
     def fetch_data_from(url, dirname=None, filename=None, is_verbose=False, is_debugging=False, is_uploading=False, filter_keys_for_callback=['Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=None):
+        the_headers = set()
         the_results = []
         r = requests.get(url)
         if (r.ok):
@@ -302,26 +312,29 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
             for row in the_results:
                 use_the_row = True
                 for k in filter_keys_for_callback:
-                    if (k in row.keys()):
+                    fuzzy_row_keys = dict([tuple([kk.lower(),kk]) for kk in row.keys()])
+                    kk = fuzzy_row_keys.get(k.lower(), None)
+                    if (kk):
+                        k = kk
+                        did_callback_happen = False
                         if (not _utils.is_floating_or_numeric_digits(row.get(k, 0.0))):
-                            new_key = '{}{}'.format(k,' (value)')
-                            did_callback_happen = False
+                            new_key = normalize_key(k)
                             try:
                                 if (callable is not None) and (callable(callback)):
                                     new_key, new_value = callback(k, row.get(k), filter_keys_for_callback)
                                     did_callback_happen = True
                             except Exception as ex:
                                 print(ex)
-                            if (not did_callback_happen):
-                                new_value = ''.join([c for c in row.get(k, 0.0) if (_utils.is_floating_or_numeric_digit(c))])
-                                new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
-                            if ((new_key is not None) and (new_value is not None)):
-                                row[new_key] = new_value
-                                if (is_debugging):
-                                    print('{} -> {} --> {} -> {}'.format(k, row.get(k, 0.0), new_key, row.get(new_key, 0.0)))
-                            else:
-                                use_the_row = False
-                                break
+                        if (not did_callback_happen):
+                            new_value = ''.join([c for c in row.get(k, 0.0) if (_utils.is_floating_or_numeric_digit(c))]).replace('...', '').replace('..', '')
+                            new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
+                        if ((new_key is not None) and (new_value is not None)):
+                            row[new_key] = new_value
+                            if (is_debugging):
+                                print('{} -> {} --> {} -> {}'.format(k, row.get(k, 0.0), new_key, row.get(new_key, 0.0)))
+                        else:
+                            use_the_row = False
+                            break
                 if (use_the_row):
                     new_results.append(row)
     
@@ -330,37 +343,54 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 print_data(the_results, verbose=is_verbose)        
     
             if (dirname is not None) and (filename is not None):
-                export_as_csv_file(the_results[0].keys(), the_results, dirname, filename, verbose=is_verbose)
+                for item in the_results:
+                    the_headers = the_headers.union(set(item.keys()))
+                export_as_csv_file(list(the_headers), the_results, dirname, filename, verbose=is_verbose)
         
                 if (is_uploading):
                     upload_to_google_drive(fname) # must debug this.
         else:
             print('WARNING: Problem with {} {}.'.format(url, r.status_code))
 
-        return the_results
+        return the_headers, the_results
     
     
+    __special_cols__ = None
     def special_column_filter(k, v, special_cols):
-        new_key, new_value = k, v # must initialize.
-        if (k == __location__):
+        if (__special_cols__ is None):
+            __special_cols__ = special_cols
+        new_key, new_value = _utils.ascii_only(k), _utils.ascii_only(v) # must initialize and must be ascii only chars.
+        if (k.lower() == str(__location__).lower()):
             import re
             regex = r"(\([A-Za-z0-9]{3}-[A-Za-z0-9]{3}\))"
             matches = [m for m in re.finditer(regex, v, re.MULTILINE)]
             if (len(matches) > 0):
                 new_key = new_value = None # signal the skipping of this row - skipped over Carriers.
         else:
-            new_key = '{}{}'.format('_'.join([t for t in str(k).split() if (len(t) > 0)]),'_value')
+            new_key = normalize_key(k)
             new_value = ''.join([c for c in v if (_utils.is_floating_or_numeric_digit(c))])
             new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
+            
+        __special_cols__ = list(set(__special_cols__).union(set([new_key])))
         return tuple([new_key, new_value])
 
-    import sys
+
+    def write_output(msg, fOut):
+        try:
+            fOut.write(msg + '\n')
+        except:
+            try:
+                fOut.put(msg)
+            except Exception as ex:
+                sys.stderr.write(msg + '\n')
+    
+    
     import pandas
 
     pandas.set_option('display.max_columns', None)
     pandas.set_option('display.width', 200)
 
-    buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
+    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
     
     df_buymin = pandas.DataFrame(buymin_results)
 
@@ -369,17 +399,17 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
     buymin_subDataFrame = harmonic_averages(df_buymin, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
     if (is_verbose):
-        print('(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
+        write_output('(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
     buymin_price = buymin_subDataFrame[colName].min()
     if (is_verbose):
-        print(buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].dropna())
+        write_output(buymin_subDataFrame[__special_cols__].dropna())
 
     fpath = os.sep.join([dirname, 'commodity_{}_buymin_locations.csv'.format(__commodity_name__)])
     with open(fpath, 'w') as fOut:
-        buymin_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Buy_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout if (is_verbose) else fOut)
+        buymin_subDataFrame[__special_cols__].to_csv(sys.stdout if (is_verbose) else fOut)
         fOut.flush()
 
-    sellmax_results = fetch_data_from(commodities_sellmax_url, dirname=dirname, filename='commodity_{}_sellmax.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
+    the_headers, sellmax_results = fetch_data_from(commodities_sellmax_url, dirname=dirname, filename='commodity_{}_sellmax.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
     
     df_sellmax = pandas.DataFrame(sellmax_results)
 
@@ -388,17 +418,20 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
     sellmax_subDataFrame = harmonic_averages(df_sellmax, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
     if (is_verbose):
-        print('(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
+        write_output('(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
     sellmax_price = sellmax_subDataFrame[colName].min()
     
-    if int(sellmax_price / buymin_price) > 5:
-        if (is_verbose):
-            print('Locations with profit margin greater than 5:')
-            print(sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].dropna())
-        fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
-        with open(fpath, 'w') as fOut:
-            sellmax_subDataFrame[[__location__, 'Pad', 'QTY_value', 'Sell_price_value', 'St_dist_value', 'Distance_value']].to_csv(sys.stdout if (is_verbose) else fOut)
-            fOut.flush()
+    try:
+        if (not math.isnan(sellmax_price)) and (math.isnan(buymin_price)) and (int(sellmax_price / buymin_price) > 5):
+            if (is_verbose):
+                write_output('Locations with profit margin greater than 5:')
+                write_output(sellmax_subDataFrame[__special_cols__].dropna())
+            fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
+            with open(fpath, 'w') as fOut:
+                sellmax_subDataFrame[__special_cols__].to_csv(sys.stdout if (is_verbose) else fOut)
+                fOut.flush()
+    except Exception as ex:
+        sys.stderr.write('WARNING: {}'.format(ex))
 
     #print(sellmax_subDataFrame)          
         
