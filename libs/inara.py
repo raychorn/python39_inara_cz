@@ -181,6 +181,8 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     from bs4 import BeautifulSoup
 
     __location__ = 'Location'
+
+    __special_cols__ = [__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance']
     
     normalize_key = lambda k:'{}{}'.format('_'.join([t for t in str(k).split() if (len(t) > 0)]),'_value')
     
@@ -279,7 +281,7 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
         return dataFrame[(dataFrame[col_name] >= new_lower_bound) & (dataFrame[col_name] <= new_upper_bound)]
 
 
-    def fetch_data_from(url, dirname=None, filename=None, is_verbose=False, is_debugging=False, is_uploading=False, filter_keys_for_callback=['Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=None):
+    def fetch_data_from(url, dirname=None, filename=None, is_verbose=False, is_debugging=False, is_uploading=False, filter_keys_for_callback=[], callback=None):
         the_headers = set()
         the_results = []
         r = requests.get(url)
@@ -313,6 +315,8 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 use_the_row = True
                 for k in filter_keys_for_callback:
                     fuzzy_row_keys = dict([tuple([kk.lower(),kk]) for kk in row.keys()])
+                    if (k is None):
+                        continue
                     kk = fuzzy_row_keys.get(k.lower(), None)
                     if (kk):
                         k = kk
@@ -326,8 +330,13 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                             except Exception as ex:
                                 print(ex)
                         if (not did_callback_happen):
-                            new_value = ''.join([c for c in row.get(k, 0.0) if (_utils.is_floating_or_numeric_digit(c))]).replace('...', '').replace('..', '')
-                            new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
+                            new_value = row.get(k, 0.0)
+                            if (not isinstance(new_value, float)):
+                                try:
+                                    new_value = ''.join([c for c in new_value if (_utils.is_floating_or_numeric_digit(c))]).replace('...', '').replace('..', '')
+                                    new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
+                                except Exception as ex:
+                                    sys.stderr.write('{}\n'.format(ex))
                         if ((new_key is not None) and (new_value is not None)):
                             row[new_key] = new_value
                             if (is_debugging):
@@ -355,12 +364,9 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
         return the_headers, the_results
     
     
-    __special_cols__ = None
     def special_column_filter(k, v, special_cols):
-        if (__special_cols__ is None):
-            __special_cols__ = special_cols
-        new_key, new_value = _utils.ascii_only(k), _utils.ascii_only(v) # must initialize and must be ascii only chars.
-        if (k.lower() == str(__location__).lower()):
+        new_key, new_value = _utils.ascii_only(k) if (isinstance(k, str)) else k, _utils.ascii_only(v) if (isinstance(v, str)) else v
+        if (isinstance(k, str)) and (isinstance(v, str)) and (k.lower() == str(__location__).lower()):
             import re
             regex = r"(\([A-Za-z0-9]{3}-[A-Za-z0-9]{3}\))"
             matches = [m for m in re.finditer(regex, v, re.MULTILINE)]
@@ -368,29 +374,48 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 new_key = new_value = None # signal the skipping of this row - skipped over Carriers.
         else:
             new_key = normalize_key(k)
-            new_value = ''.join([c for c in v if (_utils.is_floating_or_numeric_digit(c))])
-            new_value = float(new_value) if (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
+            new_value = ''.join([c for c in v if (_utils.is_floating_or_numeric_digit(c))]) if (isinstance(v, str)) else v
+            new_value = float(new_value) if (isinstance(new_key, float)) or (_utils.is_floating_or_numeric_digits(new_value)) else 0.0
             
-        __special_cols__ = list(set(__special_cols__).union(set([new_key])))
+        if (new_key is not None):
+            new_special_cols = list(set(special_cols).union(set([new_key])))
+            while (len(special_cols) > 0):
+                special_cols.pop()
+            for item in new_special_cols:
+                special_cols.append(item)
         return tuple([new_key, new_value])
 
 
-    def write_output(msg, fOut):
+    def write_output(fOut, msg):
         try:
-            fOut.write(msg + '\n')
+            if (isinstance(msg, str)):
+                fOut.write(msg + '\n')
+            else:
+                fOut.write(msg.to_string() + '\n')
         except:
             try:
-                fOut.put(msg)
+                fOut.put(msg if (isinstance(msg, str)) else msg.ro_string())
             except Exception as ex:
                 sys.stderr.write(msg + '\n')
-    
+
+
+    def normalize_frame_keys(frame, specials):
+        sCols = []
+        try:
+            keys = frame.keys()
+            for col in specials:
+                if (col in keys):
+                    sCols.append(col)
+        except Exception as ex:
+            sys.stderr.write('{}\n'.format(ex))
+        return sCols
     
     import pandas
 
     pandas.set_option('display.max_columns', None)
     pandas.set_option('display.width', 200)
 
-    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=[__location__, 'Buy price', 'Sell price', 'QTY', 'St dist', 'Distance'], callback=special_column_filter)
+    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
     
     df_buymin = pandas.DataFrame(buymin_results)
 
@@ -399,15 +424,15 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
     buymin_subDataFrame = harmonic_averages(df_buymin, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
     if (is_verbose):
-        write_output('(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
+        write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
     buymin_price = buymin_subDataFrame[colName].min()
     if (is_verbose):
-        write_output(buymin_subDataFrame[__special_cols__].dropna())
+        write_output(fOut, buymin_subDataFrame[normalize_frame_keys(buymin_subDataFrame, __special_cols__)].dropna())
 
     fpath = os.sep.join([dirname, 'commodity_{}_buymin_locations.csv'.format(__commodity_name__)])
-    with open(fpath, 'w') as fOut:
-        buymin_subDataFrame[__special_cols__].to_csv(sys.stdout if (is_verbose) else fOut)
-        fOut.flush()
+    with open(fpath, 'w') as ffOut:
+        buymin_subDataFrame[normalize_frame_keys(buymin_subDataFrame, __special_cols__)].to_csv(sys.stdout if (is_verbose) else ffOut)
+        ffOut.flush()
 
     the_headers, sellmax_results = fetch_data_from(commodities_sellmax_url, dirname=dirname, filename='commodity_{}_sellmax.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
     
@@ -418,18 +443,24 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
     sellmax_subDataFrame = harmonic_averages(df_sellmax, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
     if (is_verbose):
-        write_output('(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
+        write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
     sellmax_price = sellmax_subDataFrame[colName].min()
     
     try:
-        if (not math.isnan(sellmax_price)) and (math.isnan(buymin_price)) and (int(sellmax_price / buymin_price) > 5):
+        fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
+        isnan_sellmax_price = math.isnan(sellmax_price)
+        isnan_buymin_price = math.isnan(buymin_price)
+        if (not isnan_sellmax_price) and (not isnan_buymin_price) and (int(sellmax_price / buymin_price) > 5):
             if (is_verbose):
-                write_output('Locations with profit margin greater than 5:')
-                write_output(sellmax_subDataFrame[__special_cols__].dropna())
-            fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
-            with open(fpath, 'w') as fOut:
-                sellmax_subDataFrame[__special_cols__].to_csv(sys.stdout if (is_verbose) else fOut)
-                fOut.flush()
+                write_output(fOut, 'Locations with profit margin greater than 5:')
+                write_output(fOut, sellmax_subDataFrame[normalize_frame_keys(sellmax_subDataFrame, __special_cols__)].dropna())
+            with open(fpath, 'w') as ffOut:
+                sellmax_subDataFrame[normalize_frame_keys(sellmax_subDataFrame, __special_cols__)].to_csv(sys.stdout if (is_verbose) else ffOut)
+                ffOut.flush()
+        elif (isnan_sellmax_price) or (isnan_buymin_price):
+            with open(fpath, 'w') as ffOut:
+                ffOut.write('WARNING: {}{}{}\n'.format('Max sell price is NaN.' if (isnan_sellmax_price) else '', ' or ' if (isnan_sellmax_price or isnan_buymin_price) else ' and ' if (isnan_sellmax_price and isnan_buymin_price) else '', 'Min buy price is NaN.' if (isnan_buymin_price) else ''))
+                ffOut.flush()
     except Exception as ex:
         sys.stderr.write('WARNING: {}'.format(ex))
 
