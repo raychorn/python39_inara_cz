@@ -2,24 +2,42 @@ import os
 import sys
 import pickle
 import json
-#print("PYTHONPATH = {}".format(os.environ['PYTHONPATH']))
 
-paths = os.environ['PYTHONPATH'].split(os.pathsep)
+paths = os.environ.get(
+    'PYTHONPATH', os.path.abspath('../python_lib') + os.pathsep + os.path.abspath('./libs')).split(os.pathsep)
 for p in paths:
-    if (p not in sys.path):
+    if (p.startswith('.' + os.sep)):
+        p = os.path.abspath(p)
+    if (p.startswith('~' + os.sep)):
+        p = os.path.expanduser(p)
+    print(p)
+    if (p not in sys.path) and (os.path.exists(p)) and (os.path.isdir(p)):
         print("Adding {} to sys.path.".format(p))
         sys.path.insert(0, p)
 
-from vyperlogix import _utils
+import_failures = 0
+try:
+    from vyperlogix import _utils
+except ImportError as ex:
+    import_failures += 1
+    print(ex)
 
 if (0):
     for f in sys.path:
         print(f)
 
-from inara import sample as inara_sample
-from inara import scrape_commodities
-from inara import scrape_commodity_data
-from inara import upload_to_google_drive
+try:
+    from inara import sample as inara_sample
+    from inara import scrape_commodities
+    from inara import scrape_commodity_data
+    from inara import upload_to_google_drive
+except ImportError as ex:
+    import_failures += 1
+    print(ex)
+
+if (import_failures > 0):
+    print('Too many import failures. {}'.format(import_failures))
+    sys.exit(1)
 
 __scrape_commodities__ = False
 __scrape_commodity_data__ = True
@@ -80,6 +98,8 @@ if (__name__ == '__main__'):
                 __commodity_name__ = commodities.commodities_by_value.get(item, 'UNKNWON-COMMODITY')
                 fname = 'commodity_{}_report.txt'.format(__commodity_name__)
                 fpath = os.sep.join([target_dirname, fname])
+                if (not os.path.exists(os.path.dirname(fpath))):
+                    os.makedirs(os.path.dirname(fpath))
                 with open(fpath, 'w') as ffOut:
                     scrape_commodity_data(commodity_refid=item, star_system_refid=0, dirname=target_dirname, is_verbose=True, fOut=ffOut)
                     ffOut.flush()
