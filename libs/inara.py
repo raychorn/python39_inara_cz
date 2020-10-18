@@ -415,7 +415,10 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     pandas.set_option('display.max_columns', None)
     pandas.set_option('display.width', 200)
 
-    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
+    ##########################################################################
+
+    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(
+        __commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
     
     df_buymin = pandas.DataFrame(buymin_results)
 
@@ -433,6 +436,8 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     with open(fpath, 'w') as ffOut:
         buymin_subDataFrame[normalize_frame_keys(buymin_subDataFrame, __special_cols__)].to_csv(sys.stdout if (is_verbose) else ffOut)
         ffOut.flush()
+
+    ##########################################################################
 
     the_headers, sellmax_results = fetch_data_from(commodities_sellmax_url, dirname=dirname, filename='commodity_{}_sellmax.csv'.format(__commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
     

@@ -44,6 +44,8 @@ __scrape_commodity_data__ = True
 __prep_google_creds__ = False
 __upload_to_google__ = False
 
+__single_threaded__ = False
+
 if (__name__ == '__main__'):
     # float(sys.version_info.major)+(float(sys.version_info.minor)/10)+(float(sys.version_info.micro)/100)
     py_version = _utils.getVersionFloat()
@@ -62,7 +64,7 @@ if (__name__ == '__main__'):
         import commodities
 
         target_dirname = './data'
-        if (0):
+        if (not __single_threaded__):
             import time
             from concurrent import futures as concurrent_futures
             
@@ -93,6 +95,9 @@ if (__name__ == '__main__'):
                 sys.stderr.write('Signal we are done.\n')
                 __done__['is_done'] = True
         else:
+            import time
+            start_time = time.time()
+            sys.stdout.write('Single Threaded:\n')
             items = [commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
             for item in items:
                 __commodity_name__ = commodities.commodities_by_value.get(item, 'UNKNWON-COMMODITY')
@@ -103,6 +108,9 @@ if (__name__ == '__main__'):
                 with open(fpath, 'w') as ffOut:
                     scrape_commodity_data(commodity_refid=item, star_system_refid=0, dirname=target_dirname, is_verbose=True, fOut=ffOut)
                     ffOut.flush()
+            end_time = time.time()
+            num_ticks = end_time - start_time
+            sys.stdout.write('Run consumed {} ticks.\n'.format(num_ticks))
 
     if (__prep_google_creds__):
         fpath1 = os.path.abspath('./token.pickle')
