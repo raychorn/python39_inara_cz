@@ -4,11 +4,5 @@
 			"path": "."
 		}
 	],
-	"settings": {
-		"python.venvPath": "C:/Users/Owner/OneDrive/Python39/inara_cz/venv;",
-		"python.pythonPath": "C:/Users/Owner/OneDrive/Python39/inara_cz/venv/Scripts/python.exe;",
-		"terminal.integrated.env.windows": {
-			"PATH": "C:/Program Files/Git/cmd;C:/Users/Owner/.cargo/bin;C:/msys/opt/windows_64/bin;C:/Users/Owner/OneDrive/Python39/inara_cz/venv/Scripts"
-		},
-	}
+	"settings": {}
 }
