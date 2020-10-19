@@ -21,6 +21,8 @@ import os
 import sys
 import math
 
+signal_done = '***DONE***'
+
 class CommodityError(Exception):
     pass
 
@@ -387,16 +389,20 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
 
 
     def write_output(fOut, msg):
+        is_q = str(type(fOut)).find('Queue') > -1
+        if (is_q):
+            try:
+                fOut.put(msg if (isinstance(msg, str)) else str(msg))
+            except Exception as ex:
+                sys.stderr.write(msg + '\n')
+            return
         try:
             if (isinstance(msg, str)):
                 fOut.write(msg + '\n')
             else:
-                fOut.write(msg.to_string() + '\n')
-        except:
-            try:
-                fOut.put(msg if (isinstance(msg, str)) else msg.ro_string())
-            except Exception as ex:
-                sys.stderr.write(msg + '\n')
+                fOut.write(str(msg) + '\n')
+        except Exception as ex:
+            sys.stderr.write(msg + '\n')
 
 
     def normalize_frame_keys(frame, specials):
@@ -468,8 +474,7 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 ffOut.flush()
     except Exception as ex:
         sys.stderr.write('WARNING: {}'.format(ex))
+    write_output(fOut, signal_done)
 
-    #print(sellmax_subDataFrame)          
-        
 if (__name__ == '__main__'):
     scrape_commodity_data()

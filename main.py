@@ -1,7 +1,12 @@
 import os
+from queue import Empty
 import sys
 import pickle
 import json
+import time
+import traceback
+
+from io import StringIO
 
 paths = os.environ.get(
     'PYTHONPATH', os.path.abspath('../python_lib') + os.pathsep + os.path.abspath('./libs')).split(os.pathsep)
@@ -31,6 +36,7 @@ try:
     from inara import scrape_commodities
     from inara import scrape_commodity_data
     from inara import upload_to_google_drive
+    from inara import signal_done
 except ImportError as ex:
     import_failures += 1
     print(ex)
@@ -67,35 +73,88 @@ if (__name__ == '__main__'):
         if (not __single_threaded__):
             import time
             from concurrent import futures as concurrent_futures
-            
-            __done__ = {'is_done':False}
-            def wait_for_output(output_queue, __done__):
-                while (1):
-                    try:
-                        msg = output_queue.get(timeout=5)
-                        if (msg):
-                            sys.stdout('{}\n'.format(msg))
-                        if (__done__.get('is_done', False) and (output_queue.qsize() == 0)):
-                            sys.stderr.write('Nothing more to do.\n')
-                            break
-                    except:
-                        __done__['is_done'] = True
-                    time.sleep(1)
-            
-            output = Queue(maxsize = 100)
-            items = [wait_for_output, commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
-    
+
+            start_time = time.time()
+
+            __done__ = {'is_done': False}
+
+            output = Queue(maxsize=100)
+
+            def wait_for_output(*args):
+                if (len(args) == 0):
+                    sys.stderr.write(
+                        'ERROR: Missing args for wait_for_output.\n')
+                    return
+                d_done = {}
+                try:
+                    output_queue, d_done = args[0]
+                    while (not d_done.get('is_done', False)):
+                        try:
+                            try:
+                                msg = output_queue.get(timeout=5)
+                            except Empty:
+                                print(
+                                    '+++ {}'.format(str(d_done.get('is_done', False))))
+                                continue
+                            if (msg):
+                                sys.stdout('{}\n'.format(msg))
+                                if (msg == signal_done):
+                                    break
+                            if (d_done.get('is_done', False)
+                                    and (output_queue.qsize() == 0)):
+                                sys.stderr.write('Nothing more to do.\n')
+                                break
+                        except Exception as ex:
+                            buf = StringIO()
+                            traceback.print_exc(file=buf)
+                            buf.flush()
+                            print(
+                                '(1) EXCEPTION: {} {}'.format(
+                                    str(ex), buf.getvalue()))
+                            d_done['is_done'] = True
+                        time.sleep(1)
+                except Exception as ex:
+                    buf = StringIO()
+                    traceback.print_exc(file=buf)
+                    buf.flush()
+                    print(
+                        '(2) EXCEPTION: {} {}'.format(
+                            str(ex), buf.getvalue()))
+                    d_done['is_done'] = True
+
+            items = [
+                (wait_for_output, output, __done__,),
+                commodities.commodities_by_name.get('Tritium'),
+                commodities.commodities_by_name.get('AgronomicTreatment')]
+
             with concurrent_futures.ThreadPoolExecutor(max_workers=10) as executor:
-                futures = {executor.submit(scrape_commodity_data, commodity_refid=item, star_system_refid=0, dirname=target_dirname, is_verbose=False, fOut=output) if (not isinstance(item, callable)) else item(output, __done__): item for item in items}
+                futures = {
+                    executor.submit(
+                        scrape_commodity_data,
+                        commodity_refid=item,
+                        star_system_refid=0,
+                        dirname=target_dirname,
+                        is_verbose=True,
+                        fOut=output) if (not isinstance(item, tuple)) else executor.submit(item[0], item[1:]): item for item in items}
                 for future in concurrent_futures.as_completed(futures):
                     try:
                         data = future.result()
+                        print('data = {}'.format(data))
                     except Exception as ex:
-                        print('Got an exception: %s' % (ex))
-                sys.stderr.write('Signal we are done.\n')
-                __done__['is_done'] = True
+                        buf = StringIO()
+                        traceback.print_exc(file=buf)
+                        buf.flush()
+                        print(
+                            '(3) EXCEPTION: {} {}'.format(
+                                str(ex), buf.getvalue()))
+                sys.stderr.write('Concurrent tasks have been setup.\n')
+            sys.stderr.write('Concurrent futures should all me done.\n')
+            __done__['is_done'] = True
+
+            end_time = time.time()
+            num_ticks = end_time - start_time
+            sys.stdout.write('Run consumed {} ticks.\n'.format(num_ticks))
         else:
-            import time
             start_time = time.time()
             sys.stdout.write('Single Threaded:\n')
             items = [commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
