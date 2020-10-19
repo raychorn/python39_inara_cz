@@ -44,7 +44,9 @@ End with an example of getting some data out of the system or using it for a lit
 
 ## Usage <a name = "usage"></a>
 
-Add notes about how to use the system.
+In my environment, the threaded version runs about 25% faster than the non-threaded version.
+
+There are two opportunities to use threading. Each "task" fetches data for one commodity at a time.  The data fetcher can also be made concurrent because it performs two tasks.
 
 ## Copyright <a name = "copyright"></a>
 
