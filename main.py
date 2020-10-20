@@ -36,7 +36,8 @@ try:
     from inara import scrape_commodities
     from inara import scrape_commodity_data
     from inara import upload_to_google_drive
-    from inara import signal_done
+    from inara import signal_done, signal_begin
+    from inara import is_Q
 except ImportError as ex:
     import_failures += 1
     print(ex)
@@ -50,7 +51,14 @@ __scrape_commodity_data__ = True
 __prep_google_creds__ = False
 __upload_to_google__ = False
 
-__single_threaded__ = False
+__single_threaded__ = True
+
+def get_report_fpath(cname):
+    fname = 'commodity_{}_report.txt'.format(cname)
+    fpath = os.sep.join([target_dirname, fname])
+    if (not os.path.exists(os.path.dirname(fpath))):
+        os.makedirs(os.path.dirname(fpath))
+    return fpath
 
 if (__name__ == '__main__'):
     # float(sys.version_info.major)+(float(sys.version_info.minor)/10)+(float(sys.version_info.micro)/100)
@@ -70,13 +78,18 @@ if (__name__ == '__main__'):
         import commodities
 
         target_dirname = './data'
+
+        tasks = [
+            commodities.commodities_by_name.get('Tritium'),
+            commodities.commodities_by_name.get('AgronomicTreatment')]
+
+        task_tracker = {}
+
         if (not __single_threaded__):
             import time
             from concurrent import futures as concurrent_futures
 
             start_time = time.time()
-
-            __done__ = {'is_done': False}
 
             output = Queue(maxsize=100)
 
@@ -85,71 +98,126 @@ if (__name__ == '__main__'):
                     sys.stderr.write(
                         'ERROR: Missing args for wait_for_output.\n')
                     return
-                d_done = {}
+                fOut = None
+                cname = None
+                output_queue = args[0][0]  # unwrap the tuple because we're not doing this otherwise.
+                report_line_count = 0
+                if (not is_Q(output_queue)):
+                    raise(ValueError, 'ERROR: Queue was not specified in function wait_for_output().')
                 try:
-                    output_queue, d_done = args[0]
-                    while (not d_done.get('is_done', False)):
+                    def get_dones(tt):
+                        resp = []
+                        for k,v in tt.items():
+                            resp.append(v.get('is_done', False))
+                        return resp
+                    print('(1) all dones --> {}'.format(get_dones(task_tracker)))
+                    while (not all(get_dones(task_tracker))):
+                        print('(2) all dones --> {}'.format(get_dones(task_tracker)))
                         try:
                             try:
                                 msg = output_queue.get(timeout=5)
                             except Empty:
-                                print(
-                                    '+++ {}'.format(str(d_done.get('is_done', False))))
                                 continue
                             if (msg):
-                                sys.stdout('{}\n'.format(msg))
-                                if (msg == signal_done):
-                                    break
-                            if (d_done.get('is_done', False)
-                                    and (output_queue.qsize() == 0)):
+                                sys.stdout.write('{}\n'.format(msg))
+                                if (msg.find(signal_begin) > -1) or (msg.find(signal_done) > -1):
+                                    toks = msg.split('+')
+                                    if (toks[0] == signal_begin):
+                                        cname = toks[-1]
+                                        fpath = get_report_fpath(cname)
+                                        if (fOut is not None):
+                                            try:
+                                                if (report_line_count == 0):
+                                                    fOut.write('NOTHING TO REPORT - Cause might be terse output.\n')
+                                                fOut.flush()
+                                                fOut.close()
+                                                report_line_count = 0
+                                                fOut = None
+                                            except:
+                                                pass
+                                        fOut = open(fpath, 'w')
+                                        continue
+                                    elif (toks[0] == signal_done):
+                                        cname = toks[-1]
+                                        bucket = task_tracker.get(cname, {})
+                                        bucket['is_done'] = True
+                                        task_tracker[cname] = bucket
+                                        if (fOut is not None):
+                                            try:
+                                                if (report_line_count == 0):
+                                                    fOut.write('NOTHING TO REPORT - Cause might be terse output.\n')
+                                                fOut.flush()
+                                                fOut.close()
+                                                report_line_count = 0
+                                                fOut = None
+                                            except:
+                                                pass
+                                        continue
+                                if (fOut is not None):
+                                    report_line_count += 1
+                                    fOut.write('{}\n'.format(msg))
+                                else:
+                                    sys.stderr.write('WARNING: fOut is invalid.\n')
+                            print("Are we done yet. {} {}".format(get_dones(task_tracker), output_queue.qsize()))
+                            if (all(get_dones(task_tracker)) and (output_queue.qsize() == 0)):
                                 sys.stderr.write('Nothing more to do.\n')
                                 break
                         except Exception as ex:
                             buf = StringIO()
                             traceback.print_exc(file=buf)
                             buf.flush()
-                            print(
-                                '(1) EXCEPTION: {} {}'.format(
-                                    str(ex), buf.getvalue()))
-                            d_done['is_done'] = True
+                            print('(1) EXCEPTION: {} {}'.format( str(ex), buf.getvalue()))
+                            if (cname is not None):
+                                bucket = task_tracker.get(cname, {})
+                                bucket['is_done'] = True
+                                task_tracker[cname] = bucket
+                        print('(3) all dones --> {}'.format(get_dones(task_tracker)))
                         time.sleep(1)
                 except Exception as ex:
                     buf = StringIO()
                     traceback.print_exc(file=buf)
                     buf.flush()
-                    print(
-                        '(2) EXCEPTION: {} {}'.format(
-                            str(ex), buf.getvalue()))
-                    d_done['is_done'] = True
+                    print('(2) EXCEPTION: {} {}'.format(str(ex), buf.getvalue()))
+                    if (cname is not None):
+                        bucket = task_tracker.get(cname, {})
+                        bucket['is_done'] = True
+                        task_tracker[cname] = bucket
 
-            items = [
-                (wait_for_output, output, __done__,),
-                commodities.commodities_by_name.get('Tritium'),
-                commodities.commodities_by_name.get('AgronomicTreatment')]
+                print('(4) all dones --> {}'.format(get_dones(task_tracker)))
+
+            tasks.insert(0, (wait_for_output, output))
+
+            # initialize the task_tracker
+            for t in tasks:
+                if (not isinstance(t, int)):
+                    continue
+                __commodity_name__ = commodities.commodities_by_value.get(t, 'UNKNOWN-COMMODITY')
+                task_tracker[__commodity_name__] = {'is_done':False}
 
             with concurrent_futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = {
                     executor.submit(
                         scrape_commodity_data,
-                        commodity_refid=item,
+                        commodity_refid=t,
                         star_system_refid=0,
                         dirname=target_dirname,
-                        is_verbose=True,
-                        fOut=output) if (not isinstance(item, tuple)) else executor.submit(item[0], item[1:]): item for item in items}
+                        is_verbose=False,
+                        fOut=output) if (not isinstance(t, tuple)) else executor.submit(t[0], t[1:]): t for t in tasks}
                 for future in concurrent_futures.as_completed(futures):
                     try:
                         data = future.result()
-                        print('data = {}'.format(data))
+                        print('+++ data = {}'.format(data))
+                        bucket = task_tracker.get(data, None)
+                        if (bucket):
+                            bucket['is_done'] = True
+                            task_tracker[data] = bucket
                     except Exception as ex:
                         buf = StringIO()
                         traceback.print_exc(file=buf)
                         buf.flush()
-                        print(
-                            '(3) EXCEPTION: {} {}'.format(
-                                str(ex), buf.getvalue()))
+                        print('(3) EXCEPTION: {} {}'.format(str(ex), buf.getvalue()))
                 sys.stderr.write('Concurrent tasks have been setup.\n')
             sys.stderr.write('Concurrent futures should all me done.\n')
-            __done__['is_done'] = True
 
             end_time = time.time()
             num_ticks = end_time - start_time
@@ -157,15 +225,20 @@ if (__name__ == '__main__'):
         else:
             start_time = time.time()
             sys.stdout.write('Single Threaded:\n')
-            items = [commodities.commodities_by_name.get('Tritium'), commodities.commodities_by_name.get('AgronomicTreatment')]
-            for item in items:
-                __commodity_name__ = commodities.commodities_by_value.get(item, 'UNKNWON-COMMODITY')
+            for t in tasks:
+                __commodity_name__ = commodities.commodities_by_value.get(
+                    t, 'UNKNWON-COMMODITY')
                 fname = 'commodity_{}_report.txt'.format(__commodity_name__)
                 fpath = os.sep.join([target_dirname, fname])
                 if (not os.path.exists(os.path.dirname(fpath))):
                     os.makedirs(os.path.dirname(fpath))
                 with open(fpath, 'w') as ffOut:
-                    scrape_commodity_data(commodity_refid=item, star_system_refid=0, dirname=target_dirname, is_verbose=True, fOut=ffOut)
+                    scrape_commodity_data(
+                        commodity_refid=t,
+                        star_system_refid=0,
+                        dirname=target_dirname,
+                        is_verbose=False,
+                        fOut=ffOut)
                     ffOut.flush()
             end_time = time.time()
             num_ticks = end_time - start_time

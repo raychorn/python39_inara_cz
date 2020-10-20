@@ -20,8 +20,12 @@ USE AT YOUR OWN RISK.
 import os
 import sys
 import math
+import traceback
 
+signal_begin = '***START***'
 signal_done = '***DONE***'
+
+def is_Q(cl): return str(type(cl)).find('Queue') > -1
 
 class CommodityError(Exception):
     pass
@@ -387,9 +391,8 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 special_cols.append(item)
         return tuple([new_key, new_value])
 
-
     def write_output(fOut, msg):
-        is_q = str(type(fOut)).find('Queue') > -1
+        is_q = is_Q(fOut)
         if (is_q):
             try:
                 fOut.put(msg if (isinstance(msg, str)) else str(msg))
@@ -421,22 +424,40 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     pandas.set_option('display.max_columns', None)
     pandas.set_option('display.width', 200)
 
+    write_output(fOut, signal_begin + '+{}'.format(__commodity_name__))
+
     ##########################################################################
 
-    the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(
-        __commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
+    try:
+        the_headers, buymin_results = fetch_data_from(commodities_buymin_url, dirname=dirname, filename='commodity_{}_buymin.csv'.format(
+            __commodity_name__), is_verbose=False, is_debugging=False, filter_keys_for_callback=__special_cols__, callback=special_column_filter)
+    except Exception as ex:
+        buf = StringIO()
+        traceback.print_exc(file=buf)
+        buf.flush()
+        txt = '(1) EXCEPTION: {} {}'.format( str(ex), buf.getvalue())
+        write_output(fOut, txt)
+        sys.stderr.write(txt)
     
     df_buymin = pandas.DataFrame(buymin_results)
 
     colName = 'Buy_price_value'
     #print('(0) Min {}, Max {}, Mean {}'.format(df_buymin[colName].min(), df_buymin[colName].max(), df_buymin[colName].mean()))
 
-    buymin_subDataFrame = harmonic_averages(df_buymin, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
-    if (is_verbose):
-        write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
-    buymin_price = buymin_subDataFrame[colName].min()
-    if (is_verbose):
-        write_output(fOut, buymin_subDataFrame[normalize_frame_keys(buymin_subDataFrame, __special_cols__)].dropna())
+    try:
+        buymin_subDataFrame = harmonic_averages(df_buymin, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
+        if (is_verbose):
+            write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(buymin_subDataFrame[colName].min(), buymin_subDataFrame[colName].max(), buymin_subDataFrame[colName].mean()))
+        buymin_price = buymin_subDataFrame[colName].min()
+        if (is_verbose):
+            write_output(fOut, buymin_subDataFrame[normalize_frame_keys(buymin_subDataFrame, __special_cols__)].dropna())
+    except Exception as ex:
+        buf = StringIO()
+        traceback.print_exc(file=buf)
+        buf.flush()
+        txt = '(2) EXCEPTION: {} {}'.format( str(ex), buf.getvalue())
+        write_output(fOut, txt)
+        sys.stderr.write(txt)
 
     fpath = os.sep.join([dirname, 'commodity_{}_buymin_locations.csv'.format(__commodity_name__)])
     with open(fpath, 'w') as ffOut:
@@ -452,10 +473,18 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
     colName = 'Sell_price_value'
     #print('(0) Min {}, Max {}, Mean {}'.format(df_sellmax[colName].min(), df_sellmax[colName].max(), df_sellmax[colName].mean()))
 
-    sellmax_subDataFrame = harmonic_averages(df_sellmax, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
-    if (is_verbose):
-        write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
-    sellmax_price = sellmax_subDataFrame[colName].min()
+    try:
+        sellmax_subDataFrame = harmonic_averages(df_sellmax, colName, harmonic=3, min_qty=1000, qty_col_name='QTY_value')
+        if (is_verbose):
+            write_output(fOut, '(1) Min {}, Max {}, Mean {}'.format(sellmax_subDataFrame[colName].min(), sellmax_subDataFrame[colName].max(), sellmax_subDataFrame[colName].mean()))
+        sellmax_price = sellmax_subDataFrame[colName].min()
+    except Exception as ex:
+        buf = StringIO()
+        traceback.print_exc(file=buf)
+        buf.flush()
+        txt = '(3) EXCEPTION: {} {}'.format( str(ex), buf.getvalue())
+        write_output(fOut, txt)
+        sys.stderr.write(txt)
     
     try:
         fpath = os.sep.join([dirname, 'commodity_{}_sellmax_locations.csv'.format(__commodity_name__)])
@@ -473,8 +502,16 @@ def scrape_commodity_data(commodity_refid=10269, star_system_refid=0, dirname='.
                 ffOut.write('WARNING: {}{}{}\n'.format('Max sell price is NaN.' if (isnan_sellmax_price) else '', ' or ' if (isnan_sellmax_price or isnan_buymin_price) else ' and ' if (isnan_sellmax_price and isnan_buymin_price) else '', 'Min buy price is NaN.' if (isnan_buymin_price) else ''))
                 ffOut.flush()
     except Exception as ex:
-        sys.stderr.write('WARNING: {}'.format(ex))
-    write_output(fOut, signal_done)
+        buf = StringIO()
+        traceback.print_exc(file=buf)
+        buf.flush()
+        txt = '(4) EXCEPTION: {} {}'.format( str(ex), buf.getvalue())
+        write_output(fOut, txt)
+        sys.stderr.write(txt)
+
+    write_output(fOut, signal_done + '+{}'.format(__commodity_name__))
+
+    return __commodity_name__
 
 if (__name__ == '__main__'):
     scrape_commodity_data()

@@ -1,7 +1,7 @@
 !.gitignore
 venv/*
 orjson/*
-data/*
+data*/*
 token.pickle
 client_secrets.7z
 
