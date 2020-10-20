@@ -1,4 +1,4 @@
-# Python inara.cz interface for Elite Dangerous.
+# Python inara.cz interface for Elite Dangerous. 
 
 ## Table of Contents
 
